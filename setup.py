@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import argparse
-import re
 from datetime import datetime
 
 # Funcao para limpar espacos extras nas strings
