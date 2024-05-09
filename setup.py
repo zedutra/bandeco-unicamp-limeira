@@ -17,13 +17,15 @@ def formatar_string(string):
         return string_formatada
     except:
         return string_limpa
-    
+
+# Imprime o cardapio
 def imprimir_cardapio(cardapio):
     for chave, valor in cardapio.items():
         print(f"{chave}:")
         for sub_chave, sub_valor in valor.items():
             print(f"  {sub_chave}: {sub_valor}")
 
+# Se existir a refeicao do cardapio, remove
 def remover_refeicao(refeicao, cardapio):
     if refeicao in cardapio:
         cardapio.pop(refeicao)
