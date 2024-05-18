@@ -1,2 +1,5 @@
 setup.py
 /bandeco/__init__.py
+/bandeco.egg-info
+/deb_dist
+/dist
