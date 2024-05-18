@@ -14,9 +14,9 @@ Limeira, com a opção de filtrar os resultados por data, refeição, vegetarian
 ## Repositório
 > $ git clone https://github.com/zedutra/bandeco-unicamp-limeira.git
 
-> $ cd /bandeco-unicamp-limeira
+> $ cd /bandeco-unicamp-limeira/bandeco
 
-> $ python3 setup.py
+> $ python3 bandeco.py
 
 # Uso
 > $ bandeco -jap --data=18-05-2024
