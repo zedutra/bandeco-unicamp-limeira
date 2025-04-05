@@ -1,79 +1,36 @@
 import requests
+import pandas as pd
 from bs4 import BeautifulSoup
-import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
+
+# Valores constantes
+URL = "https://www.sar.unicamp.br/RU/view/site/cardapio.php"
+REFEICAO_KEYS = ('Acompanhamentos', 'Prato Principal', 'Guarnição', 'Salada', 'Sobremesa', 'Refresco', 'Extra', 'Nota Técnica')
+CAFE_KEYS = ('Comida', 'Bebida')
+DATA_INICIAL = datetime.strptime("2014-01-01", "%Y-%m-%d")
+DATA_FINAL = datetime.strptime("2024-12-31", "%Y-%m-%d")
 
 # Funcao para limpar espacos extras nas strings
-def formatar_string(string):
-    # Divide a string em palavras
+def formatarString(string):
     palavras = string.split()
-
-    # Une as palavras novamente com um único espaço entre elas
-    string_limpa = ' '.join(palavras)
-    # Tenta dividir a string por : para pegar apenas o nome do alimento (ACOMPANHAMENTOS:ARROZ E FEIJÃO)
+    stringLimpa = ' '.join(palavras)
     try:
-        string_dividida = string_limpa.split(':')
-        string_formatada = string_dividida[1].strip()
-        return string_formatada
+        stringDividida = stringLimpa.split(':')
+        stringFormatada = stringDividida[1].strip()
+        return stringFormatada
     except:
-        return string_limpa
+        return stringLimpa
 
-# Imprime o cardapio
-def imprimir_cardapio(cardapio):
-    for chave, valor in cardapio.items():
-        print(f"{chave}:")
-        for sub_chave, sub_valor in valor.items():
-            print(f"  {sub_chave}: {sub_valor}")
-
-# Se existir a refeicao do cardapio, remove
-def remover_refeicao(refeicao, cardapio):
-    if refeicao in cardapio:
-        cardapio.pop(refeicao)
-    return cardapio
-
-def main():
-    # Tratando os argumentos
-    parser = argparse.ArgumentParser(description='Programa para verificar o cardapio do restaurante universitario da Unicamp de Limeira')
-    parser.add_argument('-v', '-vegano', action='store_true', help='Filtra pelas refeições veganas')
-    parser.add_argument('-p', '-padrao', action='store_true', help='Filtra pelas refeições padrão')
-    parser.add_argument('-a', '-almoco', action='store_true', help='Requisita o cardápio do almoço')
-    parser.add_argument('-j', '-jantar', action='store_true', help='Requisita o cardápio do jantar')
-    parser.add_argument('-c', '-cafe', action='store_true', help='Requisita o cardápio do café da manhã')
-    parser.add_argument('--data', type=str, help='Data no formato dd-mm-yyyy')
-    args = parser.parse_args()
-    # Verificando se existem argumentos de refeicao
-    if args.a or args.j or args.c:
-        no_args = False
-    else:
-        no_args = True
-
-    # URL alvo
-    url = "https://www.sar.unicamp.br/RU/view/site/cardapio.php"
-
-    # Data a ser requisitada do cardápio
-    if args.data:
-        try:
-            data = datetime.strptime(args.data, '%d-%m-%Y')
-            data = data.strftime('%Y-%m-%d')
-        except ValueError:
-            print("Formato de data inválido. Use o formato dd-mm-yyyy.")
-            exit()
-    else:
-        data = datetime.now().strftime('%Y-%m-%d')
-
+def getSite(data):
     payload = {
         'data': data
     }
-
-    # Headers da requisicao
     headers = {
         "Host": "www.sar.unicamp.br",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
     }
-
-    # Enviando a requisicao e verificando erros
     try:
-        response = requests.post(url, headers=headers, data=payload)
+        response = requests.post(URL, headers=headers, data=payload)
         if response.status_code != 200:
             print('Não foi possível obter informações do cardápio')
             print(f'Error: {response.status_code}')
@@ -83,54 +40,100 @@ def main():
         exit()
 
     site = BeautifulSoup(response.text, "html.parser")
+    return site
 
+def getCardapio(site):
     # Procurando as tabelas de cada refeicao
     tables = site.find_all("table")
 
-    # Chaves de cada refeicao e cafe
-    refeicao_keys = ('Acompanhamentos', 'Prato Principal', 'Guarnição', 'Salada', 'Sobremesa', 'Refresco', 'Extra', 'Nota Técnica')
-    cafe_keys = ('Comida', 'Bebida')
-
     # Definindo dicionarios
-    almoco_padrao = dict.fromkeys(refeicao_keys)
-    almoco_vegano = dict.fromkeys(refeicao_keys)
-    jantar_padrao = dict.fromkeys(refeicao_keys)
-    jantar_vegano = dict.fromkeys(refeicao_keys)
-    cafe_manha = dict.fromkeys(cafe_keys)
-    refeicoes = (almoco_padrao, almoco_vegano, jantar_padrao, jantar_vegano, cafe_manha)
+    almocoPadrao = dict.fromkeys(REFEICAO_KEYS)
+    almocoVegano = dict.fromkeys(REFEICAO_KEYS)
+    jantarPadrao = dict.fromkeys(REFEICAO_KEYS)
+    jantarVegano = dict.fromkeys(REFEICAO_KEYS)
+    cafeManha = dict.fromkeys(CAFE_KEYS)
+    refeicoes = (almocoPadrao, almocoVegano, jantarPadrao, jantarVegano, cafeManha)
 
     # Formatando informacoes no html para dicionarios
     for x in range(len(refeicoes)):
         td_comidas = tables[x].find_all('td')
         for td in range(len(td_comidas)):
-            comida = formatar_string(td_comidas[td].getText())
-            if refeicoes[x] != cafe_manha:
-                refeicoes[x].update({refeicao_keys[td]: comida})
+            comida = formatarString(td_comidas[td].getText())
+            if refeicoes[x] != cafeManha:
+                refeicoes[x].update({REFEICAO_KEYS[td]: comida})
             else:
-                refeicoes[x].update({cafe_keys[td]: comida})
-    
+                refeicoes[x].update({CAFE_KEYS[td]: comida})
+
     # Montando o cardapio a ser exibido
-    cardapio = {}
+    cardapio = {
+        'Almoço Padrão': almocoPadrao,
+        'Almoço Vegano': almocoVegano,
+        'Jantar Padrão': jantarPadrao,
+        'Jantar Vegano': jantarVegano,
+        # 'Café da Manhã': cafeManha
+    }
 
-    # Adicionando refeicoes requisitadas pelo usuario
-    if args.a or no_args:
-        cardapio["Almoço Padrão"] = almoco_padrao
-        cardapio['Almoço Vegano'] = almoco_vegano
-    if args.j or no_args:
-        cardapio['Jantar Padrão'] = jantar_padrao
-        cardapio['Jantar Vegano'] = jantar_vegano
-    if args.c or no_args:
-        cardapio['Café da Manhã'] = cafe_manha
+    return cardapio
 
-    # Filtrando por refeicoes veganas ou padrao
-    if args.v:
-        cardapio = remover_refeicao('Almoço Padrão', cardapio)
-        cardapio = remover_refeicao('Jantar Padrão', cardapio)
-    if args.p:
-        cardapio = remover_refeicao('Almoço Vegano', cardapio)
-        cardapio = remover_refeicao('Jantar Vegano', cardapio)
+def main():
+    # Dados das refeicoes
+    almocoPadraoDados = []
+    almocoVeganoDados = []
+    jantarPadraoDados = []
+    jantarVeganoDados = []
+    # cafeDados = []    
 
-    imprimir_cardapio(cardapio)
+    # Percorrer os dias entre as duas datas
+    dataAtual = DATA_INICIAL
+
+    while dataAtual <= DATA_FINAL:
+        dataStr = dataAtual.strftime('%Y-%m-%d')
+        site = getSite(dataStr)
+        cardapio = getCardapio(site)
+
+        if cardapio['Almoço Padrão'].get('Prato Principal'):
+            almocoPadraoDados.append({
+                'Data': dataStr,
+                **cardapio['Almoço Padrão']
+            })
+
+        if cardapio['Almoço Vegano'].get('Prato Principal'):
+            almocoVeganoDados.append({
+                'Data': dataStr,
+                **cardapio['Almoço Vegano']
+            })
+
+        if cardapio['Jantar Padrão'].get('Prato Principal'):
+            jantarPadraoDados.append({
+                'Data': dataStr,
+                **cardapio['Jantar Padrão']
+            })
+
+        if cardapio['Jantar Vegano'].get('Prato Principal'):
+            jantarVeganoDados.append({
+                'Data': dataStr,
+                **cardapio['Jantar Vegano']
+            })
+
+        # if cardapio['Café da Manhã'].get('Comida'):
+        #     cafeDados.append({
+        #         'Data': dataStr,
+        #         **cardapio['Café da Manhã']
+        #     })
+
+        dataAtual += timedelta(days=1)  # Avança um dia
+
+    dfAlmocoPadrao = pd.DataFrame(almocoPadraoDados)
+    dfAlmocoVegano = pd.DataFrame(almocoVeganoDados)
+    dfJantarPadrao = pd.DataFrame(jantarPadraoDados)
+    dfJantarVegano = pd.DataFrame(jantarVeganoDados)
+    # dfCafe = pd.DataFrame(cafeDados)
+    
+    dfAlmocoPadrao.to_csv('almoco_padrao.csv', index=False)
+    dfAlmocoVegano.to_csv('almoco_vegano.csv', index=False)
+    dfJantarPadrao.to_csv('jantar_padrao.csv', index=False)
+    dfJantarVegano.to_csv('jantar_vegano.csv', index=False)
+    # dfCafe.to_csv('cafe_da_manha.csv', index=False)
 
 if __name__ == '__main__':
     main()
