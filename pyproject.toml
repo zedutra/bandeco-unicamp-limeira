@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bandeco"
+version = "1.1.0"
+description = "Aplicação de linha de comando para verificar o cardápio do Restaurante Universitário da Unicamp de Limeira"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "zedutra", email = "zedutra@protonmail.com" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.25.0",
+    "beautifulsoup4>=4.9.0",
+]
+
+[project.urls]
+Repository = "https://github.com/zedutra/bandeco-unicamp-limeira"
+
+[project.scripts]
+bandeco = "bandeco.bandeco:main"

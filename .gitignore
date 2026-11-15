@@ -1,5 +1,10 @@
-setup.py
-/bandeco/__init__.py
-/bandeco.egg-info
-/deb_dist
-/dist
+__pycache__/
+*.py[cod]
+*$py.class
+/build/
+/deb_dist/
+/dist/
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
