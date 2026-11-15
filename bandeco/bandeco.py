@@ -1,24 +1,163 @@
-import sys
-import requests
-from bs4 import BeautifulSoup
 import argparse
 from datetime import datetime
+import sys
+from typing import Dict, Optional
+from bs4 import BeautifulSoup
+import requests
 
-# Funcao para limpar espacos extras nas strings
-def formatar_string(string):
-    # Divide a string em palavras
+URL_CARDAPIO = "https://www.sar.unicamp.br/RU/view/site/cardapio.php"
+HEADERS_PADRAO = {
+    "Host": "www.sar.unicamp.br",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+}
+
+CHAVES_REFEICAO = (
+    "Acompanhamentos",
+    "Prato Principal",
+    "Guarnição",
+    "Salada",
+    "Sobremesa",
+    "Refresco",
+    "Extra",
+    "Nota Técnica",
+)
+CHAVES_CAFE = ("Comida", "Bebida")
+
+CardapioDict = Dict[str, Dict[str, Optional[str]]]
+
+
+def formatar_string(string: str) -> str:
+    """Remove espaços extras e extrai o valor após o primeiro ':' se existir."""
     palavras = string.split()
-
-    # Une as palavras novamente com um único espaço entre elas
-    string_limpa = ' '.join(palavras)
-    # Divide a string apenas no primeiro ':' para preservar dois-pontos no conteudo
-    if ':' in string_limpa:
-        _, valor = string_limpa.split(':', 1)
+    string_limpa = " ".join(palavras)
+    if ":" in string_limpa:
+        _, valor = string_limpa.split(":", 1)
         return valor.strip()
     return string_limpa
 
-# Imprime o cardapio
-def imprimir_cardapio(cardapio):
+
+def criar_parser() -> argparse.ArgumentParser:
+    """Configura e retorna o parser de argumentos de linha de comando."""
+    parser = argparse.ArgumentParser(
+        description="Programa para verificar o cardápio do restaurante universitário da Unicamp de Limeira"
+    )
+    parser.add_argument(
+        "-v", "-vegano", "--vegano", dest="v", action="store_true", help="Filtra pelas refeições veganas"
+    )
+    parser.add_argument(
+        "-p", "-padrao", "--padrao", dest="p", action="store_true", help="Filtra pelas refeições padrão"
+    )
+    parser.add_argument(
+        "-a", "-almoco", "--almoco", dest="a", action="store_true", help="Requisita o cardápio do almoço"
+    )
+    parser.add_argument(
+        "-j", "-jantar", "--jantar", dest="j", action="store_true", help="Requisita o cardápio do jantar"
+    )
+    parser.add_argument(
+        "-c", "-cafe", "--cafe", dest="c", action="store_true", help="Requisita o cardápio do café da manhã"
+    )
+    parser.add_argument("--data", type=str, help="Data no formato dd-mm-yyyy")
+    return parser
+
+
+def resolver_data(data_str: Optional[str] = None) -> str:
+    """Converte a data informada (dd-mm-yyyy) para o formato da API (yyyy-mm-dd)."""
+    if data_str:
+        try:
+            data = datetime.strptime(data_str, "%d-%m-%Y")
+            return data.strftime("%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError("Formato de data inválido. Use o formato dd-mm-yyyy.") from exc
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def requisitar_html_cardapio(data: str, timeout: int = 10) -> str:
+    """Faz a requisição HTTP POST ao site da SAR Unicamp e retorna o HTML."""
+    response = requests.post(
+        URL_CARDAPIO,
+        headers=HEADERS_PADRAO,
+        data={"data": data},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.text
+
+
+def extrair_cardapio(html: str) -> CardapioDict:
+    """Extrai as tabelas de refeições do HTML e retorna um dicionário estruturado."""
+    site = BeautifulSoup(html, "html.parser")
+    tables = site.find_all("table")
+    if len(tables) < 5:
+        return {}
+
+    definicoes_refeicoes = (
+        ("Almoço Padrão", CHAVES_REFEICAO),
+        ("Almoço Vegano", CHAVES_REFEICAO),
+        ("Jantar Padrão", CHAVES_REFEICAO),
+        ("Jantar Vegano", CHAVES_REFEICAO),
+        ("Café da Manhã", CHAVES_CAFE),
+    )
+
+    cardapio: CardapioDict = {}
+    for indice, (nome_refeicao, chaves) in enumerate(definicoes_refeicoes):
+        dados_refeicao: Dict[str, Optional[str]] = dict.fromkeys(chaves)
+        td_comidas = tables[indice].find_all("td")
+        for chave, td in zip(chaves, td_comidas):
+            dados_refeicao[chave] = formatar_string(td.get_text())
+        cardapio[nome_refeicao] = dados_refeicao
+
+    return cardapio
+
+
+def remover_refeicao(refeicao: str, cardapio: CardapioDict) -> CardapioDict:
+    """Remove uma refeição do dicionário do cardápio, caso exista."""
+    cardapio.pop(refeicao, None)
+    return cardapio
+
+
+def filtrar_cardapio(
+    cardapio_completo: CardapioDict,
+    almoco: bool = False,
+    jantar: bool = False,
+    cafe: bool = False,
+    vegano: bool = False,
+    padrao: bool = False,
+) -> CardapioDict:
+    """Filtra o cardápio completo de acordo com as opções escolhidas pelo usuário."""
+    if not cardapio_completo:
+        return {}
+
+    todas_refeicoes = not (almoco or jantar or cafe)
+    cardapio: CardapioDict = {}
+
+    if almoco or todas_refeicoes:
+        if "Almoço Padrão" in cardapio_completo:
+            cardapio["Almoço Padrão"] = cardapio_completo["Almoço Padrão"]
+        if "Almoço Vegano" in cardapio_completo:
+            cardapio["Almoço Vegano"] = cardapio_completo["Almoço Vegano"]
+
+    if jantar or todas_refeicoes:
+        if "Jantar Padrão" in cardapio_completo:
+            cardapio["Jantar Padrão"] = cardapio_completo["Jantar Padrão"]
+        if "Jantar Vegano" in cardapio_completo:
+            cardapio["Jantar Vegano"] = cardapio_completo["Jantar Vegano"]
+
+    if cafe or todas_refeicoes:
+        if "Café da Manhã" in cardapio_completo:
+            cardapio["Café da Manhã"] = cardapio_completo["Café da Manhã"]
+
+    if vegano and not padrao:
+        remover_refeicao("Almoço Padrão", cardapio)
+        remover_refeicao("Jantar Padrão", cardapio)
+    elif padrao and not vegano:
+        remover_refeicao("Almoço Vegano", cardapio)
+        remover_refeicao("Jantar Vegano", cardapio)
+
+    return cardapio
+
+
+def imprimir_cardapio(cardapio: CardapioDict) -> None:
+    """Exibe o cardápio formatado no terminal."""
     if not cardapio:
         print("Nenhuma refeição encontrada para os filtros selecionados.")
         return
@@ -28,113 +167,39 @@ def imprimir_cardapio(cardapio):
         for sub_chave, sub_valor in valor.items():
             print(f"  {sub_chave}: {sub_valor}")
 
-# Se existir a refeicao do cardapio, remove
-def remover_refeicao(refeicao, cardapio):
-    if refeicao in cardapio:
-        cardapio.pop(refeicao)
-    return cardapio
 
-def main():
-    # Tratando os argumentos
-    parser = argparse.ArgumentParser(description='Programa para verificar o cardapio do restaurante universitario da Unicamp de Limeira')
-    parser.add_argument('-v', '-vegano', '--vegano', dest='v', action='store_true', help='Filtra pelas refeições veganas')
-    parser.add_argument('-p', '-padrao', '--padrao', dest='p', action='store_true', help='Filtra pelas refeições padrão')
-    parser.add_argument('-a', '-almoco', '--almoco', dest='a', action='store_true', help='Requisita o cardápio do almoço')
-    parser.add_argument('-j', '-jantar', '--jantar', dest='j', action='store_true', help='Requisita o cardápio do jantar')
-    parser.add_argument('-c', '-cafe', '--cafe', dest='c', action='store_true', help='Requisita o cardápio do café da manhã')
-    parser.add_argument('--data', type=str, help='Data no formato dd-mm-yyyy')
+def main() -> None:
+    parser = criar_parser()
     args = parser.parse_args()
-    # Verificando se existem argumentos de refeicao
-    no_args = not (args.a or args.j or args.c)
 
-    # URL alvo
-    url = "https://www.sar.unicamp.br/RU/view/site/cardapio.php"
-
-    # Data a ser requisitada do cardápio
-    if args.data:
-        try:
-            data = datetime.strptime(args.data, '%d-%m-%Y')
-            data = data.strftime('%Y-%m-%d')
-        except ValueError:
-            print("Formato de data inválido. Use o formato dd-mm-yyyy.", file=sys.stderr)
-            sys.exit(1)
-    else:
-        data = datetime.now().strftime('%Y-%m-%d')
-
-    payload = {
-        'data': data
-    }
-
-    # Headers da requisicao
-    headers = {
-        "Host": "www.sar.unicamp.br",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    }
-
-    # Enviando a requisicao e verificando erros
     try:
-        response = requests.post(url, headers=headers, data=payload, timeout=10)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        print('Não foi possível obter informações do cardápio.', file=sys.stderr)
-        print(f'Erro: {e}', file=sys.stderr)
+        data = resolver_data(args.data)
+    except ValueError as erro:
+        print(str(erro), file=sys.stderr)
         sys.exit(1)
 
-    site = BeautifulSoup(response.text, "html.parser")
+    try:
+        html = requisitar_html_cardapio(data)
+    except requests.RequestException as erro:
+        print("Não foi possível obter informações do cardápio.", file=sys.stderr)
+        print(f"Erro: {erro}", file=sys.stderr)
+        sys.exit(1)
 
-    # Procurando as tabelas de cada refeicao
-    tables = site.find_all("table")
-    if len(tables) < 5:
+    cardapio_completo = extrair_cardapio(html)
+    if not cardapio_completo:
         print(f"Não há cardápio cadastrado para a data {data}.")
         sys.exit(0)
 
-    # Chaves de cada refeicao e cafe
-    refeicao_keys = ('Acompanhamentos', 'Prato Principal', 'Guarnição', 'Salada', 'Sobremesa', 'Refresco', 'Extra', 'Nota Técnica')
-    cafe_keys = ('Comida', 'Bebida')
-
-    # Definindo dicionarios
-    almoco_padrao = dict.fromkeys(refeicao_keys)
-    almoco_vegano = dict.fromkeys(refeicao_keys)
-    jantar_padrao = dict.fromkeys(refeicao_keys)
-    jantar_vegano = dict.fromkeys(refeicao_keys)
-    cafe_manha = dict.fromkeys(cafe_keys)
-    refeicoes = (
-        (almoco_padrao, refeicao_keys),
-        (almoco_vegano, refeicao_keys),
-        (jantar_padrao, refeicao_keys),
-        (jantar_vegano, refeicao_keys),
-        (cafe_manha, cafe_keys),
+    cardapio_filtrado = filtrar_cardapio(
+        cardapio_completo,
+        almoco=args.a,
+        jantar=args.j,
+        cafe=args.c,
+        vegano=args.v,
+        padrao=args.p,
     )
+    imprimir_cardapio(cardapio_filtrado)
 
-    # Formatando informacoes no html para dicionarios
-    for indice, (refeicao_dict, chaves) in enumerate(refeicoes):
-        td_comidas = tables[indice].find_all('td')
-        for chave, td in zip(chaves, td_comidas):
-            comida = formatar_string(td.get_text())
-            refeicao_dict[chave] = comida
 
-    # Montando o cardapio a ser exibido
-    cardapio = {}
-
-    # Adicionando refeicoes requisitadas pelo usuario
-    if args.a or no_args:
-        cardapio["Almoço Padrão"] = almoco_padrao
-        cardapio['Almoço Vegano'] = almoco_vegano
-    if args.j or no_args:
-        cardapio['Jantar Padrão'] = jantar_padrao
-        cardapio['Jantar Vegano'] = jantar_vegano
-    if args.c or no_args:
-        cardapio['Café da Manhã'] = cafe_manha
-
-    # Filtrando por refeicoes veganas ou padrao (se ambos forem passados, mantem ambos)
-    if args.v and not args.p:
-        cardapio = remover_refeicao('Almoço Padrão', cardapio)
-        cardapio = remover_refeicao('Jantar Padrão', cardapio)
-    elif args.p and not args.v:
-        cardapio = remover_refeicao('Almoço Vegano', cardapio)
-        cardapio = remover_refeicao('Jantar Vegano', cardapio)
-
-    imprimir_cardapio(cardapio)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
