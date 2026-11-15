@@ -1,5 +1,7 @@
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
+import os
 import sys
 from typing import Dict, Optional
 from bs4 import BeautifulSoup
@@ -22,6 +24,11 @@ CHAVES_REFEICAO = (
     "Nota Técnica",
 )
 CHAVES_CAFE = ("Comida", "Bebida")
+
+COR_RESET = "\033[0m"
+COR_TITULO = "\033[1;36m"
+COR_CHAVE = "\033[1;33m"
+COR_NOTA = "\033[0;31m"
 
 CardapioDict = Dict[str, Dict[str, Optional[str]]]
 
@@ -56,19 +63,44 @@ def criar_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c", "-cafe", "--cafe", dest="c", action="store_true", help="Requisita o cardápio do café da manhã"
     )
-    parser.add_argument("--data", type=str, help="Data no formato dd-mm-yyyy")
+
+    grupo_data = parser.add_mutually_exclusive_group()
+    grupo_data.add_argument("--data", type=str, help="Data no formato dd-mm-yyyy")
+    grupo_data.add_argument(
+        "-m", "--amanha", action="store_true", help="Requisita o cardápio de amanhã"
+    )
+    grupo_data.add_argument(
+        "-o", "--ontem", action="store_true", help="Requisita o cardápio de ontem"
+    )
+
+    parser.add_argument(
+        "--json", action="store_true", help="Exibe o cardápio em formato JSON"
+    )
+    parser.add_argument(
+        "--sem-cor", action="store_true", help="Desativa a formatação colorida no terminal"
+    )
     return parser
 
 
-def resolver_data(data_str: Optional[str] = None) -> str:
-    """Converte a data informada (dd-mm-yyyy) para o formato da API (yyyy-mm-dd)."""
+def resolver_data(
+    data_str: Optional[str] = None,
+    amanha: bool = False,
+    ontem: bool = False,
+    referencia: Optional[datetime] = None,
+) -> str:
+    """Converte a data informada (dd-mm-yyyy) ou atalhos para o formato da API (yyyy-mm-dd)."""
+    base = referencia or datetime.now()
     if data_str:
         try:
             data = datetime.strptime(data_str, "%d-%m-%Y")
             return data.strftime("%Y-%m-%d")
         except ValueError as exc:
             raise ValueError("Formato de data inválido. Use o formato dd-mm-yyyy.") from exc
-    return datetime.now().strftime("%Y-%m-%d")
+    if amanha:
+        return (base + timedelta(days=1)).strftime("%Y-%m-%d")
+    if ontem:
+        return (base - timedelta(days=1)).strftime("%Y-%m-%d")
+    return base.strftime("%Y-%m-%d")
 
 
 def requisitar_html_cardapio(data: str, timeout: int = 10) -> str:
@@ -156,16 +188,44 @@ def filtrar_cardapio(
     return cardapio
 
 
-def imprimir_cardapio(cardapio: CardapioDict) -> None:
-    """Exibe o cardápio formatado no terminal."""
+def suporta_cores(sem_cor: bool = False) -> bool:
+    """Verifica se o terminal atual suporta cores ANSI."""
+    if sem_cor or os.environ.get("NO_COLOR"):
+        return False
+    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def imprimir_cardapio(
+    cardapio: CardapioDict,
+    formato_json: bool = False,
+    usar_cores: bool = False,
+) -> None:
+    """Exibe o cardápio formatado no terminal ou em JSON."""
+    if formato_json:
+        print(json.dumps(cardapio, ensure_ascii=False, indent=2))
+        return
+
     if not cardapio:
         print("Nenhuma refeição encontrada para os filtros selecionados.")
         return
 
-    for chave, valor in cardapio.items():
-        print(f"{chave}:")
+    itens_refeicao = list(cardapio.items())
+    for idx, (chave, valor) in enumerate(itens_refeicao):
+        if usar_cores:
+            print(f"{COR_TITULO}{chave}:{COR_RESET}")
+        else:
+            print(f"{chave}:")
+
         for sub_chave, sub_valor in valor.items():
-            print(f"  {sub_chave}: {sub_valor}")
+            texto_valor = sub_valor if sub_valor is not None else "Não informado"
+            if usar_cores:
+                cor_item = COR_NOTA if sub_chave == "Nota Técnica" else COR_CHAVE
+                print(f"  {cor_item}{sub_chave}:{COR_RESET} {texto_valor}")
+            else:
+                print(f"  {sub_chave}: {texto_valor}")
+
+        if idx < len(itens_refeicao) - 1:
+            print()
 
 
 def main() -> None:
@@ -173,7 +233,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        data = resolver_data(args.data)
+        data = resolver_data(args.data, amanha=args.amanha, ontem=args.ontem)
     except ValueError as erro:
         print(str(erro), file=sys.stderr)
         sys.exit(1)
@@ -187,7 +247,10 @@ def main() -> None:
 
     cardapio_completo = extrair_cardapio(html)
     if not cardapio_completo:
-        print(f"Não há cardápio cadastrado para a data {data}.")
+        if args.json:
+            print(json.dumps({}, ensure_ascii=False))
+        else:
+            print(f"Não há cardápio cadastrado para a data {data}.")
         sys.exit(0)
 
     cardapio_filtrado = filtrar_cardapio(
@@ -198,7 +261,11 @@ def main() -> None:
         vegano=args.v,
         padrao=args.p,
     )
-    imprimir_cardapio(cardapio_filtrado)
+    imprimir_cardapio(
+        cardapio_filtrado,
+        formato_json=args.json,
+        usar_cores=suporta_cores(args.sem_cor),
+    )
 
 
 if __name__ == "__main__":
