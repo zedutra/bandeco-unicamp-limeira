@@ -95,6 +95,26 @@ class TestBandeco(unittest.TestCase):
     def test_extrair_cardapio_sem_tabelas(self):
         self.assertEqual(extrair_cardapio("<html><body>Sem cardápio</body></html>"), {})
 
+    def test_extrair_cardapio_refeicao_nao_cadastrada(self):
+        html_domingo = HTML_EXEMPLO.replace(
+            """  <table>
+    <tr><td>ACOMPANHAMENTOS: ARROZ E FEIJÃO</td></tr>
+    <tr><td>PRATO PRINCIPAL: Moqueca de peixe</td></tr>
+    <tr><td>GUARNIÇÃO: Abobrinha aromatizada com alecrim</td></tr>
+    <tr><td>SALADA: Jiló</td></tr>
+    <tr><td>SOBREMESA: Maçã</td></tr>
+    <tr><td>REFRESCO: Uva</td></tr>
+    <tr><td>EXTRA: PÃO E CAFÉ</td></tr>
+    <tr><td>NOTA TÉCNICA: Contém glúten no pão.</td></tr>
+  </table>""",
+            "<table><tr><td>NÃO HÁ CARDÁPIO CADASTRADO!</td></tr></table>",
+        )
+        cardapio = extrair_cardapio(html_domingo)
+        self.assertEqual(
+            cardapio["Jantar Padrão"],
+            {"Aviso": "NÃO HÁ CARDÁPIO CADASTRADO!"},
+        )
+
     def test_filtrar_cardapio_opcoes(self):
         completo = extrair_cardapio(HTML_EXEMPLO)
 

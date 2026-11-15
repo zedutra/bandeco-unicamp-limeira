@@ -9,9 +9,9 @@ from typing import Dict, Optional
 from bs4 import BeautifulSoup
 import requests
 
-URL_CARDAPIO = "https://www.sar.unicamp.br/RU/view/site/cardapio.php"
+URL_CARDAPIO = "https://sistemas.prefeituralimeira.unicamp.br/RU/view/site/cardapio.php"
 HEADERS_PADRAO = {
-    "Host": "www.sar.unicamp.br",
+    "Host": "sistemas.prefeituralimeira.unicamp.br",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
 }
 
@@ -137,8 +137,12 @@ def extrair_cardapio(html: str) -> CardapioDict:
 
     cardapio: CardapioDict = {}
     for indice, (nome_refeicao, chaves) in enumerate(definicoes_refeicoes):
-        dados_refeicao: Dict[str, Optional[str]] = dict.fromkeys(chaves)
         td_comidas = tables[indice].find_all("td")
+        if len(td_comidas) == 1 and "CARDÁPIO" in td_comidas[0].get_text().upper():
+            cardapio[nome_refeicao] = {"Aviso": formatar_string(td_comidas[0].get_text())}
+            continue
+
+        dados_refeicao: Dict[str, Optional[str]] = dict.fromkeys(chaves)
         for chave, td in zip(chaves, td_comidas):
             dados_refeicao[chave] = formatar_string(td.get_text())
         cardapio[nome_refeicao] = dados_refeicao

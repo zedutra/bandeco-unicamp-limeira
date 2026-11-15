@@ -40,7 +40,7 @@ sequenceDiagram
     participant User as Usuário (Terminal CLI)
     participant CLI as Bandeco CLI (Parser & Filtros)
     participant Cache as Cache Local (/tmp/bandeco_unicamp_*.json)
-    participant SAR as Servidor SAR Unicamp (cardapio.php)
+    participant Server as Servidor Prefeitura Limeira (sistemas.prefeituralimeira.unicamp.br)
 
     User->>CLI: Executa comando (ex: bandeco -jap --amanha)
     Note over CLI: Resolve a data alvo (YYYY-MM-DD)<br/>e valida os filtros solicitados
@@ -49,8 +49,8 @@ sequenceDiagram
     alt Cache encontrado (e sem flag --sem-cache)
         Cache-->>CLI: Retorna dicionário do cardápio instantaneamente
     else Cache ausente ou expirado
-        CLI->>SAR: Envia requisição HTTP (POST /RU/view/site/cardapio.php)
-        SAR-->>CLI: Retorna página HTML com as 5 tabelas de refeições
+        CLI->>Server: Envia requisição HTTP (POST /RU/view/site/cardapio.php)
+        Server-->>CLI: Retorna página HTML com as 5 tabelas de refeições
         Note over CLI: Extrai células <td> via BeautifulSoup4<br/>e higieniza textos e Notas Técnicas
         CLI->>Cache: Salva cardápio completo da data em JSON
     end
