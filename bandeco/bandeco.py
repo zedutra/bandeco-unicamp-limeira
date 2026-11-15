@@ -2,7 +2,9 @@ import argparse
 from datetime import datetime, timedelta
 import json
 import os
+from pathlib import Path
 import sys
+import tempfile
 from typing import Dict, Optional
 from bs4 import BeautifulSoup
 import requests
@@ -78,6 +80,9 @@ def criar_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sem-cor", action="store_true", help="Desativa a formatação colorida no terminal"
+    )
+    parser.add_argument(
+        "--sem-cache", action="store_true", help="Ignora o cache local e força nova requisição"
     )
     return parser
 
@@ -188,6 +193,57 @@ def filtrar_cardapio(
     return cardapio
 
 
+def caminho_cache(data: str, diretorio_cache: Optional[Path] = None) -> Path:
+    """Retorna o caminho do arquivo de cache temporário para uma data específica."""
+    base_dir = diretorio_cache or Path(tempfile.gettempdir())
+    return base_dir / f"bandeco_unicamp_{data}.json"
+
+
+def carregar_cache(data: str, diretorio_cache: Optional[Path] = None) -> Optional[CardapioDict]:
+    """Lê o cardápio em cache para a data informada, se existir e for válido."""
+    arquivo = caminho_cache(data, diretorio_cache)
+    if not arquivo.exists():
+        return None
+    try:
+        conteudo = json.loads(arquivo.read_text(encoding="utf-8"))
+        if isinstance(conteudo, dict) and conteudo:
+            return conteudo
+    except (OSError, json.JSONDecodeError):
+        return None
+    return None
+
+
+def salvar_cache(
+    data: str, cardapio: CardapioDict, diretorio_cache: Optional[Path] = None
+) -> None:
+    """Salva o cardápio extraído em arquivo temporário para consultas futuras."""
+    if not cardapio:
+        return
+    arquivo = caminho_cache(data, diretorio_cache)
+    try:
+        arquivo.write_text(json.dumps(cardapio, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def obter_cardapio(
+    data: str,
+    usar_cache: bool = True,
+    diretorio_cache: Optional[Path] = None,
+) -> CardapioDict:
+    """Obtém o cardápio completo a partir do cache local ou requisitando o site da SAR."""
+    if usar_cache:
+        cardapio_em_cache = carregar_cache(data, diretorio_cache)
+        if cardapio_em_cache is not None:
+            return cardapio_em_cache
+
+    html = requisitar_html_cardapio(data)
+    cardapio = extrair_cardapio(html)
+    if usar_cache and cardapio:
+        salvar_cache(data, cardapio, diretorio_cache)
+    return cardapio
+
+
 def suporta_cores(sem_cor: bool = False) -> bool:
     """Verifica se o terminal atual suporta cores ANSI."""
     if sem_cor or os.environ.get("NO_COLOR"):
@@ -239,13 +295,12 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        html = requisitar_html_cardapio(data)
+        cardapio_completo = obter_cardapio(data, usar_cache=not args.sem_cache)
     except requests.RequestException as erro:
         print("Não foi possível obter informações do cardápio.", file=sys.stderr)
         print(f"Erro: {erro}", file=sys.stderr)
         sys.exit(1)
 
-    cardapio_completo = extrair_cardapio(html)
     if not cardapio_completo:
         if args.json:
             print(json.dumps({}, ensure_ascii=False))
